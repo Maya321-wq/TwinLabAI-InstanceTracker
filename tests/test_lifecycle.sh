@@ -80,19 +80,25 @@ TW_INPUT=$'yes\n'; tw scripts/start.sh; TW_INPUT=$'STOP\n'; tw scripts/stop.sh; 
 tw scripts/history.sh; assert_text "start:alice stop:alice"; assert_eq "$(count_events)" "4" "two intents + two results"
 
 echo "[set-type]"
-new_sandbox; begin "approved type while stopped: changed, verified, still stopped, never stopped/started"
+new_sandbox; begin "listed type while stopped: changed, verified, still stopped, never stopped/started"
 TW_INPUT=$'yes\n'; tw env TYPE=t3.medium scripts/set-type.sh
 assert_rc 0; assert_text "Verified: instance type is now t3.medium"; assert_eq "$(cat "$SB/mock/type")" "t3.medium" "type changed"
 assert_called "modify-instance-attribute"; assert_not_called "stop-instances"; assert_not_called "start-instances"
 assert_eq "$(cat "$SB/mock/state")" "stopped" "still stopped"; assert_event requested_type t3.medium; assert_event outcome success
 assert_no_file "$TW_DIR/ledger/claim.json"; assert_never_destructive
 
-new_sandbox; begin "unapproved or unknown type is rejected before any AWS call"
+new_sandbox; begin "unlisted type is rejected before any AWS call"
 tw env TYPE=m5.large scripts/set-type.sh; assert_rc 1; assert_text "not in config/instance-types.txt"; no_aws
-tw env TYPE=g5.xlarge scripts/set-type.sh; assert_rc 1; assert_text "not in config/instance-types.txt"; no_aws
 
-new_sandbox; begin "UNCONFIRMED type is rejected"
-tw env TYPE=g4dn.2xlarge scripts/set-type.sh; assert_rc 1; assert_text "UNCONFIRMED"; no_aws
+new_sandbox; begin "g5 requires supervisor approval and is refused before AWS calls"
+tw env TYPE=g5.xlarge scripts/set-type.sh
+assert_rc 1; assert_text "requires supervisor approval"; no_aws
+begin "g5 can be selected after the approval marker is removed"
+sed -i 's/^g5.xlarge APPROVAL_REQUIRED$/g5.xlarge/' "$SB/types.txt"
+TW_INPUT=$'yes\n'; tw env TYPE=g5.xlarge scripts/set-type.sh
+assert_rc 0; assert_text "Verified: instance type is now g5.xlarge"; assert_eq "$(cat "$SB/mock/type")" "g5.xlarge" "g5.xlarge changed"
+assert_called "modify-instance-attribute"; assert_not_called "stop-instances"; assert_not_called "start-instances"
+assert_eq "$(cat "$SB/mock/state")" "stopped" "g5 instance remains stopped"
 
 new_sandbox; begin "shell-looking TYPE is just rejected text, never executed"
 tw env "TYPE=t3.small;touch $SB/pwned" scripts/set-type.sh; assert_rc 1; assert_no_file "$SB/pwned"; no_aws
@@ -123,16 +129,20 @@ new_sandbox; begin "AWS says OK but the type did not change: caught by verificat
 MOCK_ENV=(MOCK_MODIFY_NOOP=1); TW_INPUT=$'yes\n'; tw env TYPE=t3.medium scripts/set-type.sh
 assert_rc 1; assert_text "did not report type t3.medium"; assert_event outcome failed
 
-new_sandbox; begin "menu: lists approved types, shows UNCONFIRMED as not selectable, choice 2 = t3.medium"
+new_sandbox; begin "menu lists six selectable types and marks g5 approval required"
 TW_INPUT=$'2\nyes\n'; tw scripts/set-type.sh
-assert_rc 0; assert_text "1) t3.small"; assert_text "g4dn.2xlarge  (UNCONFIRMED: not selectable)"; assert_eq "$(cat "$SB/mock/type")" "t3.medium" "chose t3.medium"
+assert_rc 0; assert_text "1) t3.small"; assert_text "6) g4dn.2xlarge"; assert_text "g5.xlarge (requires supervisor approval; not selectable yet)"; assert_eq "$(cat "$SB/mock/type")" "t3.medium" "chose t3.medium"
 new_sandbox; TW_INPUT=$'9\n'; tw scripts/set-type.sh; assert_rc 1; assert_text "Invalid choice"; no_aws
 
 new_sandbox; begin "GPU warning when moving t3 -> g4dn"
 TW_INPUT=$'no\n'; tw env TYPE=g4dn.xlarge scripts/set-type.sh; assert_text "NVIDIA driver"; assert_text "CANNOT check"
 new_sandbox; set_type g4dn.xlarge; TW_INPUT=$'no\n'; tw env TYPE=t3.small scripts/set-type.sh; assert_text "removes the GPU"
+new_sandbox; begin "g5 also receives the NVIDIA GPU warning"
+sed -i 's/^g5.xlarge APPROVAL_REQUIRED$/g5.xlarge/' "$SB/types.txt"
+TW_INPUT=$'no\n'; tw env TYPE=g5.xlarge scripts/set-type.sh; assert_text "g5.xlarge has an NVIDIA GPU"
+new_sandbox; set_type g5.xlarge; TW_INPUT=$'no\n'; tw env TYPE=t3.small scripts/set-type.sh; assert_text "Moving from a GPU instance"
 
-new_sandbox; begin "no approved types at all: setup problem (exit 2)"
-printf 't3.small UNCONFIRMED\n' > "$SB/types.txt"; tw scripts/set-type.sh; assert_rc 2; assert_text "No type is marked 'approved'"; no_aws
+new_sandbox; begin "empty type list is a setup problem (exit 2)"
+: > "$SB/types.txt"; tw scripts/set-type.sh; assert_rc 2; assert_text "no instance types are listed"; no_aws
 
 finish_tests

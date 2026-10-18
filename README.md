@@ -37,10 +37,12 @@ The AWS CLI asks for the key itself; it is never a command-line argument or writ
 profile stays as it was, so you can go back by emptying `AWS_PROFILE`. Whether the team should keep sharing one key is
 your supervisor's decision; this tool works either way. (Individual keys would make the records more trustworthy.)
 
-### Approved instance types
-`config/instance-types.txt` ships with every type marked **UNCONFIRMED**, so `make set-type` refuses until you
-confirm the list with your supervisor and change the confirmed ones to `approved` (a normal, reviewable Git change).
-Only `t3.*` and `g4dn.*` are accepted by the tool.
+### Available instance types
+`config/instance-types.txt` lists the types available in `make set-type`: `t3.small`, `t3.medium`, `t3.large`,
+`t3.xlarge`, `g4dn.xlarge`, `g4dn.2xlarge`, and `g5.xlarge`. The `g5.xlarge` entry is marked
+`APPROVAL_REQUIRED`, so it is shown but cannot be selected until the supervisor approves it. After approval,
+remove that marker from the entry and commit the change. Before changing any instance type, the tool checks whether
+AWS offers it in the instance's Availability Zone.
 
 ## 2. Daily commands
 
@@ -66,7 +68,7 @@ make dcv                      # prints the DCV URL
 # ... work ...
 make stop                     # ONLY after everyone agrees: it disconnects every DCV user
 ```
-Changing type: agree with the team, `make stop`, then `make set-type TYPE=g4dn.xlarge`, then `make start`.
+Changing type: agree with the team, make sure the instance is stopped, then `make set-type TYPE=g4dn.xlarge`, followed by `make start` if needed.
 The tool cannot check that our machine image and GPU drivers work on a new type; it warns, you decide.
 
 ## 3. How the safety works

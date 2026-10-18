@@ -22,8 +22,8 @@ if load_config; then
   else note "AWS_PROFILE is empty: the AWS CLI's current default credentials/profile are used"; fi
 
   if load_allowlist; then
-    ok "instance-types.txt: ${#ALLOW_APPROVED[@]} approved, ${#ALLOW_PENDING[@]} UNCONFIRMED"
-    (( ${#ALLOW_APPROVED[@]} > 0 )) || note "no approved types yet: make set-type cannot be used until you confirm some with your supervisor"
+    ok "instance-types.txt: ${#ALLOW_TYPES[@]} available types, ${#ALLOW_APPROVAL_REQUIRED[@]} require supervisor approval"
+    (( ${#ALLOW_APPROVAL_REQUIRED[@]} == 0 )) || note "approval required before selecting: ${ALLOW_APPROVAL_REQUIRED[*]}"
   else bad "allowlist: $ALLOWLIST_ERROR"; fi
 
   if command -v aws >/dev/null 2>&1; then

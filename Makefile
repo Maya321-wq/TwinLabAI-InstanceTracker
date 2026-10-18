@@ -32,7 +32,7 @@ CHANGES AWS (asks for confirmation, records who/what/when, verifies the result):
   make stop                  stop it (disconnects every DCV user)
   make set-type TYPE=<type>  change type; instance must already be stopped
 
-Settings: config/twinlab.env   Approved types: config/instance-types.txt
+Settings: config/twinlab.env   Available types: config/instance-types.txt
 Script exit codes: 0 ok, 1 refused/failed, 2 setup problem, 3 AWS done but record not saved, 4 timed out
 (make itself reports any failure as exit 2 and prints the script's code as 'Error N')
 endef

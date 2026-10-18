@@ -6,28 +6,27 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/lib/ledger.sh"
 need_config; require_operator
 load_allowlist || die 2 "$ALLOWLIST_ERROR"
-(( ${#ALLOW_APPROVED[@]} > 0 )) || die 2 "No type is marked 'approved' in config/instance-types.txt. Confirm the list with your supervisor, then change UNCONFIRMED to approved for the types they approved."
 ACTION=set-type; OP_ID="$(new_op_id)"; HOST="$(hostname 2>/dev/null || echo unknown)"; CALLER_ARN=unknown
 
 REQ="${TYPE:-}"
 if [[ -z "$REQ" ]]; then
-  info "Select the target instance type (only approved types can be chosen):"
+  info "Select the target instance type:"
   n=0
-  for t in "${ALLOW_APPROVED[@]}"; do n=$((n+1)); printf '  %d) %s\n' "$n" "$t"; done
-  for t in ${ALLOW_PENDING[@]+"${ALLOW_PENDING[@]}"}; do printf '  -  %s  (UNCONFIRMED: not selectable)\n' "$t"; done
+  for t in "${ALLOW_TYPES[@]}"; do n=$((n+1)); printf '  %d) %s\n' "$n" "$t"; done
+  for t in "${ALLOW_APPROVAL_REQUIRED[@]}"; do info "  -  $t (requires supervisor approval; not selectable yet)"; done
   printf 'Enter choice [1-%d]: ' "$n" >&2
   IFS= read -r choice || choice=""
   [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= n )) || die 1 "Invalid choice. Nothing was changed."
-  REQ="${ALLOW_APPROVED[$((choice-1))]}"
+  REQ="${ALLOW_TYPES[$((choice-1))]}"
 fi
 
-approved=0
-for t in "${ALLOW_APPROVED[@]}"; do [[ "$t" == "$REQ" ]] && approved=1; done
-if (( approved == 0 )); then
-  for t in ${ALLOW_PENDING[@]+"${ALLOW_PENDING[@]}"}; do
-    [[ "$t" == "$REQ" ]] && die 1 "'$REQ' is listed but UNCONFIRMED. Get your supervisor's approval, then mark it 'approved' in config/instance-types.txt."
+listed=0
+for t in "${ALLOW_TYPES[@]}"; do [[ "$t" == "$REQ" ]] && listed=1; done
+if (( listed == 0 )); then
+  for t in "${ALLOW_APPROVAL_REQUIRED[@]}"; do
+    [[ "$t" == "$REQ" ]] && die 1 "'$REQ' requires supervisor approval. After approval, remove APPROVAL_REQUIRED from its entry in config/instance-types.txt."
   done
-  die 1 "'$REQ' is not in config/instance-types.txt. Only listed, approved types are accepted. Nothing was changed."
+  die 1 "'$REQ' is not in config/instance-types.txt. Only listed instance types are accepted. Nothing was changed."
 fi
 
 read_instance || die 1 "Cannot read the instance from AWS: $LAST_AWS_ERROR"
@@ -53,8 +52,11 @@ info
 info "About to change the type of $INSTANCE_ID:  $AWS_TYPE  ->  $REQ   (instance stays STOPPED)"
 info "Please read:"
 info "  * This tool CANNOT check that your AMI, drivers and software work on $REQ."
-[[ "$AWS_TYPE" == g4dn.* && "$REQ" != g4dn.* ]] && info "  * Moving from g4dn to $REQ removes the GPU: CARLA and other GPU software will not work."
-[[ "$AWS_TYPE" != g4dn.* && "$REQ" == g4dn.* ]] && info "  * g4dn has an NVIDIA GPU: the NVIDIA driver (and CARLA) must be installed on the machine image."
+if [[ "$AWS_TYPE" == g4dn.* || "$AWS_TYPE" == g5.* ]]; then
+  [[ "$REQ" == g4dn.* || "$REQ" == g5.* ]] || info "  * Moving from a GPU instance to $REQ removes the GPU: CARLA and other GPU software will not work."
+else
+  [[ "$REQ" == g4dn.* || "$REQ" == g5.* ]] && info "  * $REQ has an NVIDIA GPU: the NVIDIA driver (and CARLA) must be installed on the machine image."
+fi
 info "  * The public IP (and DCV URL) can change on the next start unless an Elastic IP is attached."
 info "  * Capacity for $REQ is not guaranteed: the next 'make start' can fail with a capacity error."
 info "Operator (self-declared, not verified): $OPERATOR"

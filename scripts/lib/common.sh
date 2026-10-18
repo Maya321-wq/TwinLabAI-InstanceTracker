@@ -75,22 +75,24 @@ need_config()      { load_config || die 2 "$CONFIG_ERROR"; }
 require_operator() { [[ -n "$OPERATOR" ]] || die 2 "OPERATOR is not set in the config. Add your team username (self-declared) before using this command."; }
 
 # ------------------------------------------------------------ allowlist -----
-# Fills ALLOW_APPROVED (array) and ALLOW_PENDING (array). Returns 1 on a bad file.
+# Fills ALLOW_TYPES and ALLOW_APPROVAL_REQUIRED from the configured type list.
 load_allowlist() {
-  local file="${TWINLAB_TYPES_FILE:-$TW_ROOT/config/instance-types.txt}" line n=0 t s
-  ALLOW_APPROVED=(); ALLOW_PENDING=(); ALLOWLIST_ERROR=""
+  local file="${TWINLAB_TYPES_FILE:-$TW_ROOT/config/instance-types.txt}" line n=0 t status extra
+  ALLOW_TYPES=(); ALLOW_APPROVAL_REQUIRED=(); ALLOWLIST_ERROR=""
   [[ -f "$file" ]] || { ALLOWLIST_ERROR="Allowlist not found: $file"; return 1; }
   while IFS= read -r line || [[ -n "$line" ]]; do
     n=$((n+1)); line="${line%$'\r'}"; line="${line%%#*}"
     [[ "$line" =~ ^[[:space:]]*$ ]] && continue
-    read -r t s _ <<<"$line"
-    [[ "$t" =~ ^(t3|g4dn)\.[a-z0-9]+$ ]] || { ALLOWLIST_ERROR="$file line $n: '$t' is not a t3/g4dn instance type"; return 1; }
-    case "$s" in
-      approved)    ALLOW_APPROVED+=("$t");;
-      UNCONFIRMED) ALLOW_PENDING+=("$t");;
-      *) ALLOWLIST_ERROR="$file line $n: status must be 'approved' or 'UNCONFIRMED' (got '$s')"; return 1;;
+    read -r t status extra <<<"$line"
+    [[ -z "$extra" ]] || { ALLOWLIST_ERROR="$file line $n: expected an instance type and optional APPROVAL_REQUIRED marker"; return 1; }
+    [[ "$t" =~ ^(t3|g4dn|g5)\.[a-z0-9]+$ ]] || { ALLOWLIST_ERROR="$file line $n: '$t' is not a supported t3/g4dn/g5 instance type"; return 1; }
+    case "$status" in
+      "")                  ALLOW_TYPES+=("$t");;
+      APPROVAL_REQUIRED)   ALLOW_APPROVAL_REQUIRED+=("$t");;
+      *) ALLOWLIST_ERROR="$file line $n: status must be APPROVAL_REQUIRED when present"; return 1;;
     esac
   done <"$file"
+  (( ${#ALLOW_TYPES[@]} + ${#ALLOW_APPROVAL_REQUIRED[@]} > 0 )) || { ALLOWLIST_ERROR="$file: no instance types are listed"; return 1; }
   return 0
 }
 

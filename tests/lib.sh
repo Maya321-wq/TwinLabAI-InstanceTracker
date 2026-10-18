@@ -35,7 +35,7 @@ new_sandbox() {
   printf '#!/usr/bin/env bash\necho "tests/run.sh would run here"\n' > "$SB/repo/tests/run.sh"; chmod +x "$SB/repo/tests/run.sh"
   echo stopped > "$SB/mock/state"; echo t3.small > "$SB/mock/type"; : > "$SB/mock.log"
   write_config "$SB/twinlab.env" alice
-  printf 't3.small approved\nt3.medium approved\ng4dn.xlarge approved\ng4dn.2xlarge UNCONFIRMED\n' > "$SB/types.txt"
+  printf 't3.small\nt3.medium\nt3.large\nt3.xlarge\ng4dn.xlarge\ng4dn.2xlarge\ng5.xlarge APPROVAL_REQUIRED\n' > "$SB/types.txt"
   printf '[user]\n\tname = Test\n\temail = test@example.invalid\n[init]\n\tdefaultBranch = main\n' > "$SB/gitconfig"
   MOCK_ENV=(); TW_INPUT=""; TW_DIR="$SB/repo"; TW_CFG="$SB/twinlab.env"
 }

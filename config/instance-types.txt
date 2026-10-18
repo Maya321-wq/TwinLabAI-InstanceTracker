@@ -1,21 +1,13 @@
-# Instance types that `make set-type` may apply to the shared instance.
-#
-# Format:  <instance-type> <status>   (anything after # is a comment)
-#   approved     = your supervisor has confirmed this type. Selectable.
-#   UNCONFIRMED  = listed for convenience, NOT selectable until you change it
-#                  to "approved" after confirming with your supervisor.
-#
-# Only the t3 and g4dn families are accepted by the tool.
-#
-# The entries below are the t3/g4dn sizes that were in the old Makefile menu.
-# They are all UNCONFIRMED on purpose: nobody has verified here that the
-# supervisor approved them. Edit this file, review the change in Git, and then
-# the types become usable. (g5.xlarge from the old menu was dropped because it
-# is not in the t3/g4dn families you described.)
+# Instance types available to `make set-type`.
+# AWS availability is checked in the instance's Availability Zone before changes.
+# Keep this list aligned with the team's agreed instance-type menu.
+# Add APPROVAL_REQUIRED to a type to block it pending supervisor approval.
+# After approval, remove that marker and commit the reviewed list change.
 
-t3.small      UNCONFIRMED
-t3.medium     UNCONFIRMED
-t3.large      UNCONFIRMED
-t3.xlarge     UNCONFIRMED
-g4dn.xlarge   UNCONFIRMED
-g4dn.2xlarge  UNCONFIRMED
+t3.small
+t3.medium
+t3.large
+t3.xlarge
+g4dn.xlarge
+g4dn.2xlarge
+g5.xlarge APPROVAL_REQUIRED

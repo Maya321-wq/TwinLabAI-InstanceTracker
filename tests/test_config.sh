@@ -12,10 +12,6 @@ tw scripts/validate.sh; assert_rc 0; assert_text "All checks passed"; assert_tex
 assert_text "everyone shares one key"
 assert_not_called "start-instances"; assert_never_destructive
 
-begin "validate warns when no type is approved yet"
-printf 't3.small UNCONFIRMED\n' > "$SB/types.txt"; tw scripts/validate.sh
-assert_rc 0; assert_text "no approved types yet"
-
 echo "[validate failures]"
 new_sandbox; begin "AWS credentials rejected"
 MOCK_ENV=(MOCK_FAIL_STS=1); tw scripts/validate.sh
@@ -68,14 +64,14 @@ begin "through make, a failing script is reported as make exit 2 with the script
 new_sandbox; MOCK_ENV=(MOCK_FAIL_STS=1); tw make validate; assert_rc 2; assert_text "Error 1"
 
 echo "[allowlist]"
-new_sandbox; begin "non t3/g4dn type in the allowlist is rejected"
-printf 'g5.xlarge approved\n' > "$SB/types.txt"; tw scripts/validate.sh; assert_rc 1; assert_text "not a t3/g4dn instance type"
-begin "bad status word in the allowlist"
-printf 't3.small yes\n' > "$SB/types.txt"; tw scripts/validate.sh; assert_rc 1; assert_text "status must be"
-begin "the shipped config/instance-types.txt approves nothing by itself"
+new_sandbox; begin "unsupported type family is rejected"
+printf 'm5.large\n' > "$SB/types.txt"; tw scripts/validate.sh; assert_rc 1; assert_text "not a supported t3/g4dn/g5 instance type"
+begin "allowlist rejects an unknown approval marker"
+printf 't3.small approved\n' > "$SB/types.txt"; tw scripts/validate.sh; assert_rc 1; assert_text "status must be APPROVAL_REQUIRED"
+begin "the shipped config/instance-types.txt lists six available types and gates g5"
 new_sandbox; rm "$SB/types.txt"; tw env TWINLAB_TYPES_FILE="$SB/repo/config/instance-types.txt" make validate
-assert_text "0 approved, 6 UNCONFIRMED"; assert_no_text "g5.xlarge approved"
-assert_eq "$(grep -c 'g5' "$REPO_ROOT/config/instance-types.txt" | tr -d ' ')" "1" "g5 appears only in the explanatory comment"
-assert_eq "$(grep -E '^g5' "$REPO_ROOT/config/instance-types.txt" | wc -l | tr -d ' ')" "0" "no g5 entry"
+assert_text "6 available types, 1 require supervisor approval"
+assert_eq "$(grep -Ec '^(t3\.(small|medium|large|xlarge)|g4dn\.(xlarge|2xlarge)|g5\.xlarge( APPROVAL_REQUIRED)?)$' "$REPO_ROOT/config/instance-types.txt")" "7" "all seven configured types are listed"
+assert_text "approval required before selecting: g5.xlarge"
 
 finish_tests
