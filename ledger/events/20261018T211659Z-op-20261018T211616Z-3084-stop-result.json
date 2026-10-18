@@ -1,0 +1,16 @@
+{
+  "action": "stop",
+  "aws_caller_arn": "arn:aws:iam::091957637122:user/Maya_Akl",
+  "host": "DESKTOP-9M20I3O",
+  "instance_id": "i-0c074e3dbed7a45df",
+  "instance_type": "t3.large",
+  "kind": "result",
+  "observed_state": "stopped",
+  "op_id": "op-20261018T211616Z-3084",
+  "operator_declared": "Maya",
+  "operator_verified": false,
+  "outcome": "success",
+  "region": "us-west-2",
+  "schema": 1,
+  "ts_utc": "2026-10-18T21:16:59Z"
+}
