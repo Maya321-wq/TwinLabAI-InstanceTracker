@@ -1,0 +1,9 @@
+# Keep Unix line endings so scripts run in WSL even if Git on Windows is involved.
+*.sh        text eol=lf
+*.py        text eol=lf
+Makefile    text eol=lf
+Makefile.v2.backup text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+*.example   text eol=lf
+tests/mocks/bin/* text eol=lf

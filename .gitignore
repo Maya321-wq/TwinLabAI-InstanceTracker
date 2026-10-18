@@ -1,0 +1,23 @@
+# Real configuration (may contain your declared name / profile) - never commit
+config/twinlab.env
+
+# Credentials and keys - never commit
+.env
+.env.*
+*.pem
+*.key
+credentials
+.aws/
+
+# Local-only state (COORDINATION=local mode), logs, scratch
+local/
+
+# Temporary files written by tools/ledger.py
+*.tmp
+ledger/**/*.tmp
+
+# Python / editor noise
+__pycache__/
+*.pyc
+.vscode/
+.idea/

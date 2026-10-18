@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# FAKE git for tests. It never contacts a remote and refuses to run outside the test sandbox.
+# Only the sub-commands our scripts use are supported; anything else fails closed (exit 97).
+if [[ "${TWINLAB_TEST_SANDBOX:-}" != 1 || -z "${MOCK_DIR:-}" || -z "${MOCK_LOG:-}" ]]; then
+  echo "mock git: refusing to run outside the test sandbox" >&2; exit 99
+fi
+echo "git $*" >> "$MOCK_LOG"
+cmd="${1:-}"; shift
+fail() { echo "$1" >&2; exit "${2:-1}"; }
+counter() { local f="$MOCK_DIR/count-$1" n; n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$f"; echo "$n"; }
+
+case "$cmd" in
+  rev-parse)
+    case "$*" in
+      "--is-inside-work-tree") [[ -n "${MOCK_GIT_NOT_REPO:-}" ]] && fail "fatal: not a git repository" 128; echo true;;
+      "--abbrev-ref HEAD") echo "${MOCK_GIT_BRANCH:-main}";;
+      "HEAD") cat "$MOCK_DIR/head" 2>/dev/null || echo 1111111111111111111111111111111111111111;;
+      *) fail "mock git: unsupported rev-parse $*" 97;;
+    esac;;
+  remote)  [[ -n "${MOCK_GIT_NO_REMOTE:-}" ]] && fail "error: No such remote" 2; echo "https://example.invalid/team/repo.git";;
+  status)  [[ -n "${MOCK_GIT_DIRTY:-}" ]] && echo "${MOCK_GIT_DIRTY}"; exit 0;;
+  fetch)   [[ -n "${MOCK_GIT_FETCH_FAIL:-}" ]] && fail "fatal: unable to access 'https://example.invalid/': Could not resolve host" 128; exit 0;;
+  rev-list)
+    case "${*: -1}" in
+      *..HEAD) echo "${MOCK_GIT_AHEAD:-0}";;
+      HEAD..*) echo "${MOCK_GIT_BEHIND:-0}";;
+      *) fail "mock git: unsupported rev-list $*" 97;;
+    esac;;
+  pull)    [[ -n "${MOCK_GIT_PULL_FAIL:-}" ]] && fail "fatal: Not possible to fast-forward, aborting." 128; exit 0;;
+  add)     exit 0;;
+  reset)   exit 0;;
+  commit)  n="$(counter commits)"
+           [[ -n "${MOCK_GIT_COMMIT_FAIL:-}" ]] && fail "error: Please tell me who you are." 128
+           if [[ -n "${MOCK_GIT_COMMIT_FAIL_AFTER:-}" ]] && (( n > MOCK_GIT_COMMIT_FAIL_AFTER )); then fail "error: Please tell me who you are." 128; fi
+           printf '%040d\n' "$n" > "$MOCK_DIR/head"; exit 0;;
+  push)
+    n="$(counter pushes)"
+    [[ -n "${MOCK_GIT_PUSH_NETFAIL:-}" ]] && fail "fatal: unable to access 'https://example.invalid/': Could not resolve host" 128
+    [[ -n "${MOCK_GIT_PUSH_FAIL:-}" ]] && fail " ! [rejected]        main -> main (fetch first)
+error: failed to push some refs to 'https://example.invalid/team/repo.git'"
+    if [[ -n "${MOCK_GIT_PUSH_FAIL_AFTER:-}" ]] && (( n > MOCK_GIT_PUSH_FAIL_AFTER )); then
+      fail " ! [rejected]        main -> main (fetch first)"
+    fi
+    exit 0;;
+  *) fail "mock git: unsupported sub-command: $cmd" 97;;
+esac

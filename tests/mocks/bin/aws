@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# FAKE aws for tests. It never contacts AWS and refuses to run outside the test sandbox
+# (the sandbox is built by tests/lib.sh, not by a variable you must remember to set).
+# State lives in $MOCK_DIR; every call is appended to $MOCK_LOG.
+if [[ "${TWINLAB_TEST_SANDBOX:-}" != 1 || -z "${MOCK_DIR:-}" || -z "${MOCK_LOG:-}" ]]; then
+  echo "mock aws: refusing to run outside the test sandbox" >&2; exit 99
+fi
+echo "aws $*" >> "$MOCK_LOG"
+while [[ "${1:-}" == --region || "${1:-}" == --profile ]]; do shift 2; done
+svc="${1:-}"; op="${2:-}"; shift 2 2>/dev/null
+S="$MOCK_DIR/state"; T="$MOCK_DIR/type"
+denied() { echo "An error occurred (UnauthorizedOperation) when calling the $1 operation: not authorized (key AKIAABCDEFGHIJKLMNOP)" >&2; exit 254; }
+begin_transition() {  # <visible-state> <final-state>
+  echo "$1" > "$S"; echo "$2" > "$MOCK_DIR/target"; echo "${MOCK_PENDING_POLLS:-2}" > "$MOCK_DIR/remaining"
+}
+
+case "$svc $op" in
+  "sts get-caller-identity")
+    [[ -n "${MOCK_FAIL_STS:-}" ]] && denied GetCallerIdentity
+    echo "arn:aws:iam::123456789012:user/shared-mock";;
+  "ec2 describe-instances")
+    [[ -n "${MOCK_FAIL_DESCRIBE:-}" ]] && denied DescribeInstances
+    if [[ -f "$MOCK_DIR/target" ]]; then
+      n=$(( $(cat "$MOCK_DIR/remaining") - 1 )); echo "$n" > "$MOCK_DIR/remaining"
+      if (( n <= 0 )) && [[ -z "${MOCK_NEVER_COMPLETE:-}" ]]; then cp "$MOCK_DIR/target" "$S"; rm -f "$MOCK_DIR/target"; fi
+    fi
+    q=""; prev=""; for a in "$@"; do [[ "$prev" == --query ]] && q="$a"; prev="$a"; done
+    case "$q" in   # simple single-value queries (used by the OLD Makefile.v2.backup, for the negative-control test)
+      'Reservations[0].Instances[0].State.Name')  cat "$S"; exit 0;;
+      'Reservations[0].Instances[0].InstanceType') cat "$T"; exit 0;;
+    esac
+    st="$(cat "$S")"; ip=203.0.113.10; [[ "$st" == stopped ]] && ip=None
+    printf '%s\t%s\t%s\t%s\t%s\n' "$st" "$(cat "$T")" "$ip" "2026-10-17T10:00:00+00:00" "us-west-2a";;
+  "ec2 start-instances")
+    [[ -n "${MOCK_FAIL_START:-}" ]] && denied StartInstances
+    [[ "$(cat "$S")" == stopped ]] || { echo "An error occurred (IncorrectInstanceState)" >&2; exit 254; }
+    begin_transition pending running
+    [[ -n "${MOCK_START_APPLY_BUT_ERROR:-}" ]] && { echo "Connection reset by peer" >&2; exit 255; }
+    echo '{"StartingInstances":[]}';;
+  "ec2 stop-instances")
+    [[ -n "${MOCK_FAIL_STOP:-}" ]] && denied StopInstances
+    [[ "$(cat "$S")" == running ]] || { echo "An error occurred (IncorrectInstanceState)" >&2; exit 254; }
+    begin_transition stopping stopped
+    [[ -n "${MOCK_STOP_APPLY_BUT_ERROR:-}" ]] && { echo "Connection reset by peer" >&2; exit 255; }
+    echo '{"StoppingInstances":[]}';;
+  "ec2 modify-instance-attribute")
+    [[ -n "${MOCK_FAIL_MODIFY:-}" ]] && denied ModifyInstanceAttribute
+    [[ "$(cat "$S")" == stopped ]] || { echo "An error occurred (IncorrectInstanceState)" >&2; exit 254; }
+    newtype=""; for a in "$@"; do [[ "$a" == Value=* ]] && newtype="${a#Value=}"; done
+    [[ -n "${MOCK_MODIFY_NOOP:-}" ]] || echo "$newtype" > "$T";;
+  "ec2 describe-instance-type-offerings")
+    [[ -n "${MOCK_FAIL_OFFERINGS:-}" ]] && denied DescribeInstanceTypeOfferings
+    want=""; for a in "$@"; do [[ "$a" == Name=instance-type,Values=* ]] && want="${a#*Values=}"; done
+    if [[ " ${MOCK_NOT_OFFERED:-} " == *" $want "* ]]; then echo ""; else echo "$want"; fi;;
+  *)
+    echo "mock aws: unsupported call: $svc $op" >&2; exit 97;;
+esac

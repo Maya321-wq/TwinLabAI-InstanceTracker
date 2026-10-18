@@ -1,0 +1,353 @@
+SHELL := /bin/bash
+
+.DEFAULT_GOAL := help
+
+# Preserve the Makefile selected by the user.
+# This is required when running:
+# make -f Makefile.GP ...
+THIS_MAKEFILE := $(firstword $(MAKEFILE_LIST))
+
+# ============================================================
+# AWS configuration
+# ============================================================
+
+INSTANCE_ID := i-0c074e3dbed7a45df
+REGION := us-west-2
+
+# ============================================================
+# Shared Git-tracked runtime files
+# ============================================================
+
+RUNTIME_DIR := runtime
+ACTIVE_SESSION := $(RUNTIME_DIR)/active-session.env
+RUNTIME_HISTORY := $(RUNTIME_DIR)/runtime-history.csv
+SKIP_GIT_SYNC ?= 0
+
+# ============================================================
+# Help
+# ============================================================
+
+.PHONY: help
+help:
+	@echo "Available targets:"
+	@echo "  configure   - Configure AWS CLI credentials"
+	@echo "  start       - Start instance and record start time/type"
+	@echo "  stop        - Show uptime, stop instance, and save history"
+	@echo "  status      - Show instance state"
+	@echo "  type        - Show instance type"
+	@echo "  uptime      - Show current session runtime"
+	@echo "  set-type    - Change type and leave instance stopped"
+	@echo "  dcv         - Show NICE DCV URL if a public IP exists"
+	@echo "  history     - Display recorded runtime history"
+	@echo "  sync        - Pull latest shared Git records"
+	@echo "              Set SKIP_GIT_SYNC=1 to skip the Git pull"
+
+# ============================================================
+# AWS CLI configuration
+# ============================================================
+
+.PHONY: configure
+configure:
+	@echo "=== AWS Credentials Setup ==="
+	@read -r -p "AWS Access Key ID: " ACCESS_KEY; \
+	read -r -s -p "AWS Secret Access Key: " SECRET_KEY; \
+	echo; \
+	read -r -p "AWS Region [$(REGION)]: " INPUT_REGION; \
+	CONFIG_REGION=$${INPUT_REGION:-$(REGION)}; \
+	aws configure set aws_access_key_id "$$ACCESS_KEY"; \
+	aws configure set aws_secret_access_key "$$SECRET_KEY"; \
+	aws configure set region "$$CONFIG_REGION"; \
+	unset ACCESS_KEY SECRET_KEY; \
+	echo "AWS CLI credentials configured."; \
+	echo "Region: $$CONFIG_REGION"
+
+# ============================================================
+# Git synchronization
+# ============================================================
+
+.PHONY: sync
+sync:
+	@echo "Pulling latest shared runtime records..."
+	@if [ "$(SKIP_GIT_SYNC)" = "1" ]; then \
+		echo "Skipping Git synchronization (SKIP_GIT_SYNC=1)."; \
+	else \
+		git pull --rebase; \
+	fi
+
+# ============================================================
+# Start instance
+# ============================================================
+
+.PHONY: start
+start:
+	@set -e; \
+	$(MAKE) -f "$(THIS_MAKEFILE)" --no-print-directory sync; \
+	mkdir -p "$(RUNTIME_DIR)"; \
+	STATE=$$(aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].State.Name' \
+		--output text); \
+	if [ "$$STATE" = "running" ]; then \
+		echo "Instance is already running."; \
+		if [ -f "$(ACTIVE_SESSION)" ]; then \
+			echo "An active shared session record already exists."; \
+		else \
+			echo "Warning: no active session record exists."; \
+			echo "The instance may have been started outside this Makefile."; \
+		fi; \
+		exit 0; \
+	fi; \
+	if [ "$$STATE" != "stopped" ]; then \
+		echo "Instance is currently in state: $$STATE"; \
+		echo "Wait until it becomes stopped and try again."; \
+		exit 1; \
+	fi; \
+	if [ -f "$(ACTIVE_SESSION)" ]; then \
+		echo "An active session record already exists:"; \
+		cat "$(ACTIVE_SESSION)"; \
+		echo "Refusing to overwrite it."; \
+		exit 1; \
+	fi; \
+	echo "Starting instance $(INSTANCE_ID)..."; \
+	aws ec2 start-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)"; \
+	echo "Waiting for instance to become running..."; \
+	aws ec2 wait instance-running \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)"; \
+	START_SECONDS=$$(date +%s); \
+	START_UTC=$$(date -u "+%Y-%m-%dT%H:%M:%SZ"); \
+	INSTANCE_TYPE=$$(aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].InstanceType' \
+		--output text); \
+	TEMP_FILE=$$(mktemp); \
+	{ \
+		echo "INSTANCE_ID=$(INSTANCE_ID)"; \
+		echo "START_SECONDS=$$START_SECONDS"; \
+		echo "START_UTC=$$START_UTC"; \
+		echo "INSTANCE_TYPE=$$INSTANCE_TYPE"; \
+	} > "$$TEMP_FILE"; \
+	mv "$$TEMP_FILE" "$(ACTIVE_SESSION)"; \
+	git add "$(ACTIVE_SESSION)"; \
+	git commit -m "Start instance as $$INSTANCE_TYPE"; \
+	git push; \
+	echo "Instance started successfully."; \
+	echo "Start time: $$START_UTC"; \
+	echo "Instance type: $$INSTANCE_TYPE"
+
+# ============================================================
+# Stop instance
+# Calls uptime before stopping.
+# ============================================================
+
+.PHONY: stop
+stop:
+	@set -e; \
+	$(MAKE) -f "$(THIS_MAKEFILE)" --no-print-directory sync; \
+	$(MAKE) -f "$(THIS_MAKEFILE)" --no-print-directory uptime; \
+	if [ ! -f "$(ACTIVE_SESSION)" ]; then \
+		echo "No active session record found."; \
+		echo "The instance may have been started outside this Makefile."; \
+		exit 1; \
+	fi; \
+	. "$(ACTIVE_SESSION)"; \
+	STATE=$$(aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].State.Name' \
+		--output text); \
+	if [ "$$STATE" != "running" ]; then \
+		echo "Instance is not running."; \
+		echo "Current state: $$STATE"; \
+		exit 1; \
+	fi; \
+	STOP_SECONDS=$$(date +%s); \
+	STOP_UTC=$$(date -u "+%Y-%m-%dT%H:%M:%SZ"); \
+	RUNTIME_SECONDS=$$((STOP_SECONDS - START_SECONDS)); \
+	if [ "$$RUNTIME_SECONDS" -lt 0 ]; then \
+		echo "Invalid runtime: local clock may be incorrect."; \
+		exit 1; \
+	fi; \
+	HOURS=$$((RUNTIME_SECONDS / 3600)); \
+	MINUTES=$$(((RUNTIME_SECONDS % 3600) / 60)); \
+	SECONDS=$$((RUNTIME_SECONDS % 60)); \
+	echo "Start time    : $$START_UTC"; \
+	echo "Stop time     : $$STOP_UTC"; \
+	echo "Instance type : $$INSTANCE_TYPE"; \
+	echo "Final runtime : $${HOURS}h $${MINUTES}m $${SECONDS}s"; \
+	echo "Stopping instance $(INSTANCE_ID)..."; \
+	aws ec2 stop-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)"; \
+	echo "Waiting for instance to become stopped..."; \
+	aws ec2 wait instance-stopped \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)"; \
+	if [ ! -f "$(RUNTIME_HISTORY)" ]; then \
+		echo "instance_id,start_utc,stop_utc,instance_type,runtime_seconds" \
+			> "$(RUNTIME_HISTORY)"; \
+	fi; \
+	echo "$(INSTANCE_ID),$$START_UTC,$$STOP_UTC,$$INSTANCE_TYPE,$$RUNTIME_SECONDS" \
+		>> "$(RUNTIME_HISTORY)"; \
+	rm -f "$(ACTIVE_SESSION)"; \
+	git add "$(RUNTIME_HISTORY)" "$(ACTIVE_SESSION)"; \
+	git commit -m "Stop instance after $${HOURS}h $${MINUTES}m"; \
+	git push; \
+	echo "Instance stopped."; \
+	echo "Runtime history pushed to Git."
+
+# ============================================================
+# Instance status
+# ============================================================
+
+.PHONY: status
+status:
+	@aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].[InstanceId,State.Name]' \
+		--output table
+
+# ============================================================
+# Instance type
+# ============================================================
+
+.PHONY: type
+type:
+	@aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].[InstanceId,InstanceType]' \
+		--output table
+
+# ============================================================
+# Current uptime
+# ============================================================
+
+.PHONY: uptime
+uptime:
+	@set -e; \
+	$(MAKE) -f "$(THIS_MAKEFILE)" --no-print-directory sync; \
+	if [ ! -f "$(ACTIVE_SESSION)" ]; then \
+		echo "No active session record found."; \
+		echo "The instance may not have been started using 'make start'."; \
+		exit 1; \
+	fi; \
+	. "$(ACTIVE_SESSION)"; \
+	STATE=$$(aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].State.Name' \
+		--output text); \
+	NOW_SECONDS=$$(date +%s); \
+	RUNTIME_SECONDS=$$((NOW_SECONDS - START_SECONDS)); \
+	if [ "$$RUNTIME_SECONDS" -lt 0 ]; then \
+		echo "Invalid runtime: local clock may be incorrect."; \
+		exit 1; \
+	fi; \
+	HOURS=$$((RUNTIME_SECONDS / 3600)); \
+	MINUTES=$$(((RUNTIME_SECONDS % 3600) / 60)); \
+	SECONDS=$$((RUNTIME_SECONDS % 60)); \
+	echo "Current state : $$STATE"; \
+	echo "Started at    : $$START_UTC"; \
+	echo "Instance type : $$INSTANCE_TYPE"; \
+	if [ "$$STATE" = "running" ]; then \
+		echo "Current runtime: $${HOURS}h $${MINUTES}m $${SECONDS}s"; \
+	else \
+		echo "Warning: AWS reports that the instance is not running."; \
+	fi
+
+# ============================================================
+# Change instance type
+# This target never starts the instance.
+# ============================================================
+
+.PHONY: set-type
+set-type:
+	@set -e; \
+	$(MAKE) -f "$(THIS_MAKEFILE)" --no-print-directory sync; \
+	echo "============================================="; \
+	echo " Select target instance type"; \
+	echo "============================================="; \
+	echo "  1) t3.small      1 vCPU,  2 GB RAM"; \
+	echo "  2) t3.medium     2 vCPU,  4 GB RAM"; \
+	echo "  3) t3.large      2 vCPU,  8 GB RAM"; \
+	echo "  4) t3.xlarge     4 vCPU, 16 GB RAM"; \
+	echo "  5) g4dn.xlarge   4 vCPU, 16 GB RAM, NVIDIA T4"; \
+	echo "  6) g4dn.2xlarge  8 vCPU, 32 GB RAM, NVIDIA T4"; \
+	echo "  7) g5.xlarge     4 vCPU, 16 GB RAM, NVIDIA A10G"; \
+	echo "============================================="; \
+	read -r -p "Enter choice [1-7]: " CHOICE; \
+	case "$$CHOICE" in \
+		1) INST_TYPE="t3.small" ;; \
+		2) INST_TYPE="t3.medium" ;; \
+		3) INST_TYPE="t3.large" ;; \
+		4) INST_TYPE="t3.xlarge" ;; \
+		5) INST_TYPE="g4dn.xlarge" ;; \
+		6) INST_TYPE="g4dn.2xlarge" ;; \
+		7) INST_TYPE="g5.xlarge" ;; \
+		*) echo "Invalid choice."; exit 1 ;; \
+	esac; \
+	echo "Selected type: $$INST_TYPE"; \
+	STATE=$$(aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].State.Name' \
+		--output text); \
+	if [ "$$STATE" = "running" ]; then \
+		echo "The instance is running."; \
+		echo "Calling stop, which will display and record uptime."; \
+		$(MAKE) -f "$(THIS_MAKEFILE)" --no-print-directory stop; \
+	elif [ "$$STATE" = "stopped" ]; then \
+		if [ -f "$(ACTIVE_SESSION)" ]; then \
+			echo "An active session record exists while the instance is stopped."; \
+			echo "Review the record before changing the type."; \
+			exit 1; \
+		fi; \
+		echo "Instance is already stopped."; \
+	else \
+		echo "Instance is currently in state: $$STATE"; \
+		echo "Wait until it becomes stopped and try again."; \
+		exit 1; \
+	fi; \
+	echo "Changing instance type to $$INST_TYPE..."; \
+	aws ec2 modify-instance-attribute \
+		--region "$(REGION)" \
+		--instance-id "$(INSTANCE_ID)" \
+		--instance-type "Value=$$INST_TYPE"; \
+	echo "Instance type changed to $$INST_TYPE."; \
+	echo "The instance remains STOPPED."
+
+# ============================================================
+# NICE DCV URL
+# ============================================================
+
+.PHONY: dcv
+dcv:
+	@IP=$$(aws ec2 describe-instances \
+		--region "$(REGION)" \
+		--instance-ids "$(INSTANCE_ID)" \
+		--query 'Reservations[0].Instances[0].PublicIpAddress' \
+		--output text); \
+	if [ "$$IP" = "None" ] || [ -z "$$IP" ]; then \
+		echo "No public IP is currently assigned."; \
+	else \
+		echo "DCV URL: https://$$IP:8443"; \
+	fi
+
+# ============================================================
+# Runtime history
+# ============================================================
+
+.PHONY: history
+history:
+	@$(MAKE) -f "$(THIS_MAKEFILE)" --no-print-directory sync
+	@if [ -f "$(RUNTIME_HISTORY)" ]; then \
+		cat "$(RUNTIME_HISTORY)"; \
+	else \
+		echo "No runtime history found."; \
+	fi
