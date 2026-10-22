@@ -25,6 +25,11 @@ if load_config; then
     ok "instance-types.txt: ${#ALLOW_TYPES[@]} available types, ${#ALLOW_APPROVAL_REQUIRED[@]} require supervisor approval"
     (( ${#ALLOW_APPROVAL_REQUIRED[@]} == 0 )) || note "approval required before selecting: ${ALLOW_APPROVAL_REQUIRED[*]}"
   else bad "allowlist: $ALLOWLIST_ERROR"; fi
+  if notification_setup_status; then
+    ok "Gmail notifications configured (team recipients and private App Password file)"
+  else
+    note "Gmail notifications not ready: $NOTIFICATION_ERROR"
+  fi
 
   if command -v aws >/dev/null 2>&1; then
     if arn="$(aws_cmd sts get-caller-identity --query Arn --output text 2>/dev/null)" && [[ -n "$arn" ]]; then

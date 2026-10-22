@@ -11,7 +11,7 @@
 set -u
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
-SAFE_TOOLS="bash env make python3 date sleep mktemp mkdir cat grep sed awk tr cut sort head tail wc rm cp mv ls dirname basename hostname id uname touch tee readlink chmod find diff cmp true false printf test"
+SAFE_TOOLS="bash env make python3 date sleep mktemp mkdir cat grep sed awk tr cut sort head tail wc rm cp mv ls dirname basename hostname id uname touch tee readlink chmod find diff cmp true false printf test stat"
 PASS=0; FAIL=0
 TMP_ROOT="$(mktemp -d)"; trap 'rm -rf "$TMP_ROOT"' EXIT
 MOCK_ENV=(); TW_INPUT=""; TW_DIR=""; TW_CFG=""; RC=0; SB=""
