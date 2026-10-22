@@ -1,0 +1,16 @@
+{
+  "action": "stop",
+  "aws_caller_arn": "arn:aws:iam::091957637122:user/Maya_Akl",
+  "host": "DESKTOP-6P04V1L",
+  "instance_id": "i-0c074e3dbed7a45df",
+  "instance_type": "g4dn.xlarge",
+  "kind": "result",
+  "observed_state": "stopped",
+  "op_id": "op-20261022T125508Z-1f98",
+  "operator_declared": "rana",
+  "operator_verified": false,
+  "outcome": "success",
+  "region": "us-west-2",
+  "schema": 1,
+  "ts_utc": "2026-10-22T13:02:23Z"
+}
