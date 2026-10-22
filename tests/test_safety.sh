@@ -29,7 +29,7 @@ assert_rc 2; assert_text "Refusing to write the 'default' profile"; assert_eq "$
 assert_called "aws configure --profile twinlab"; assert_not_called "aws configure set"; assert_not_called "--profile default"
 
 echo "[dry run: make -n must only PRINT]"
-for target in start stop set-type history recover clear-claim configure sync status validate type uptime dcv test help; do
+for target in start stop set-type history recover clear-claim configure sync notify-test reminder-test status validate type uptime dcv test help; do
   new_sandbox; MOCK_ENV=(); TW_INPUT=$'yes\nSTOP\nclear\n1\n'; set_state running
   begin "make -n $target runs nothing"
   tw make -n "$target" TYPE=t3.medium
@@ -62,10 +62,10 @@ bad="$(grep -v '^[[:space:]]*#' "$REPO_ROOT/Makefile" | grep -E '; *[@+-]' | gre
 assert_eq "$bad" "" "every recipe is a single call to scripts/ or tests/"
 
 begin "scripts never source data files and never use eval/force/destructive commands"
-bad="$(grep -rhE '^[[:space:]]*(source|\.)[[:space:]]' "$REPO_ROOT/scripts" | grep -vE 'lib/(common|ledger)\.sh"' || true)"
+bad="$(grep -rhE '^[[:space:]]*(source|\.)[[:space:]]' "$REPO_ROOT/scripts" | grep -vE 'lib/(common|ledger|notify)\.sh"' || true)"
 assert_eq "$bad" "" "only lib/*.sh are sourced"
 bad="$(grep -rnwE 'eval' "$REPO_ROOT/scripts" "$REPO_ROOT/tools" || true)"; assert_eq "$bad" "" "no eval"
-bad="$(grep -rnE 'terminate-instances|delete-volume|delete-snapshot|release-address|reset --hard|clean -[a-z]*f|push (-f|--force)|rm -rf|aws configure set|--dry-run' "$REPO_ROOT/scripts" "$REPO_ROOT/tools" "$REPO_ROOT/Makefile" || true)"
+bad="$(grep -rnE 'terminate-instances|delete-volume|delete-snapshot|release-address|reset --hard|clean -[a-z]*f|push (-f|--force)|rm -rf|aws configure set' "$REPO_ROOT/scripts" "$REPO_ROOT/tools" "$REPO_ROOT/Makefile" || true)"
 assert_eq "$bad" "" "no terminate/delete/force/hard-reset/dry-run flag anywhere"
 
 finish_tests

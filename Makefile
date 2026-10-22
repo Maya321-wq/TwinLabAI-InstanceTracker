@@ -20,6 +20,8 @@ READ-ONLY (never changes AWS or Git):
   make dcv         print the DCV URL if the instance is running
   make history     sessions and operations from the local records
   make recover     diagnose mismatches between AWS, records and Git; prints next steps
+  make notify-test send a Gmail test email (no AWS or Git changes)
+  make reminder-test verify Windows Task Scheduler can launch WSL (no AWS or email)
   make test        run the mock-only tests (no AWS, no remote Git)
 
 CHANGES LOCAL FILES / GIT ONLY (never AWS):
@@ -38,7 +40,7 @@ Script exit codes: 0 ok, 1 refused/failed, 2 setup problem, 3 AWS done but recor
 endef
 export HELP_TEXT
 
-.PHONY: help validate status type uptime dcv start stop set-type history recover clear-claim configure sync test
+.PHONY: help validate status type uptime dcv start stop set-type history recover clear-claim configure sync notify-test reminder-test test
 
 help: ; @printf '%s\n' "$$HELP_TEXT"
 
@@ -53,6 +55,8 @@ test:        ; @bash tests/run.sh
 
 configure:   ; @bash scripts/configure.sh
 sync:        ; @bash scripts/sync.sh
+notify-test: ; @bash scripts/notify-test.sh
+reminder-test: ; @bash scripts/reminder-test.sh
 clear-claim: ; @bash scripts/clear-claim.sh
 
 start:       ; @bash scripts/start.sh

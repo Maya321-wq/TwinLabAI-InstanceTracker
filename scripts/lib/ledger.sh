@@ -9,6 +9,8 @@
 #   4. finish   : write a "result" event, remove the claim, commit ONLY ledger/, push
 # A successful push proves only that a record was saved. It never proves what AWS did.
 
+source "$TW_ROOT/scripts/lib/notify.sh"
+
 ledger() { python3 -I "$TW_TOOLS/ledger.py" --dir "$LEDGER_DIR" "$@"; }
 
 LAST_GIT_ERROR=""
@@ -117,6 +119,10 @@ finish_op() {
       err "Do NOT repeat the command. Run: make recover   (it prints the exact next steps)"
       exit 3
     fi
+  fi
+  if [[ "$code" == 0 && "$outcome" == success && ( "$ACTION" == start || "$ACTION" == stop ) ]]; then
+    notify_operation "$ACTION" || true
+    if [[ "$ACTION" == start ]]; then schedule_start_reminder "$OP_ID" "$AWS_LAUNCH" || true; fi
   fi
   exit "$code"
 }

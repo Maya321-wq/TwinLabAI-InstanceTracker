@@ -31,7 +31,7 @@ sanitize() {
 }
 
 # ---------------------------------------------------------------- config ----
-TW_ALLOWED_KEYS=" INSTANCE_ID REGION OPERATOR AWS_PROFILE COORDINATION GIT_REMOTE GIT_BRANCH CLAIM_TTL_MINUTES WAIT_TIMEOUT_SECONDS POLL_SECONDS "
+TW_ALLOWED_KEYS=" INSTANCE_ID REGION OPERATOR AWS_PROFILE COORDINATION GIT_REMOTE GIT_BRANCH CLAIM_TTL_MINUTES WAIT_TIMEOUT_SECONDS POLL_SECONDS EMAIL_NOTIFICATIONS GMAIL_ADDRESS NOTIFY_EMAILS OPERATOR_EMAIL REMINDER_MINUTES REMINDER_BACKEND "
 
 # load_config: returns 0 and sets globals, or returns 1 with CONFIG_ERROR set.
 load_config() {
@@ -56,6 +56,11 @@ load_config() {
   GIT_REMOTE="${cfg[GIT_REMOTE]:-origin}"; GIT_BRANCH="${cfg[GIT_BRANCH]:-main}"
   CLAIM_TTL_MINUTES="${cfg[CLAIM_TTL_MINUTES]:-60}"
   WAIT_TIMEOUT_SECONDS="${cfg[WAIT_TIMEOUT_SECONDS]:-600}"; POLL_SECONDS="${cfg[POLL_SECONDS]:-15}"
+  EMAIL_NOTIFICATIONS="${cfg[EMAIL_NOTIFICATIONS]:-on}"
+  GMAIL_ADDRESS="${cfg[GMAIL_ADDRESS]:-}"; NOTIFY_EMAILS="${cfg[NOTIFY_EMAILS]:-}"
+  OPERATOR_EMAIL="${cfg[OPERATOR_EMAIL]:-}"; REMINDER_MINUTES="${cfg[REMINDER_MINUTES]:-240}"
+  REMINDER_BACKEND="${cfg[REMINDER_BACKEND]:-local}"
+  GMAIL_PASSWORD_FILE="$HOME/.config/twinlab-ops/gmail-app-password"
 
   [[ "$INSTANCE_ID" =~ ^i-[0-9a-f]{8}([0-9a-f]{9})?$ ]] || { CONFIG_ERROR="INSTANCE_ID is missing or not a valid EC2 instance id (got '$INSTANCE_ID')"; return 1; }
   [[ "$REGION" =~ ^[a-z]{2}(-[a-z]+)+-[0-9]$ ]] || { CONFIG_ERROR="REGION is missing or invalid (got '$REGION'); expected e.g. us-west-2"; return 1; }
@@ -67,12 +72,57 @@ load_config() {
   [[ "$CLAIM_TTL_MINUTES" =~ ^[0-9]+$ ]] && (( CLAIM_TTL_MINUTES >= 5 && CLAIM_TTL_MINUTES <= 720 )) || { CONFIG_ERROR="CLAIM_TTL_MINUTES must be 5..720"; return 1; }
   [[ "$WAIT_TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] && (( WAIT_TIMEOUT_SECONDS >= 1 && WAIT_TIMEOUT_SECONDS <= 3600 )) || { CONFIG_ERROR="WAIT_TIMEOUT_SECONDS must be 1..3600"; return 1; }
   [[ "$POLL_SECONDS" =~ ^[0-9]+$ ]] && (( POLL_SECONDS >= 1 && POLL_SECONDS <= 60 )) || { CONFIG_ERROR="POLL_SECONDS must be 1..60"; return 1; }
+  [[ "$EMAIL_NOTIFICATIONS" == on || "$EMAIL_NOTIFICATIONS" == off ]] || { CONFIG_ERROR="EMAIL_NOTIFICATIONS must be 'on' or 'off'"; return 1; }
+  [[ "$REMINDER_MINUTES" =~ ^[0-9]+$ ]] && (( REMINDER_MINUTES >= 1 && REMINDER_MINUTES <= 4320 )) || { CONFIG_ERROR="REMINDER_MINUTES must be 1..4320"; return 1; }
+  [[ "$REMINDER_BACKEND" == local || "$REMINDER_BACKEND" == windows ]] || { CONFIG_ERROR="REMINDER_BACKEND must be 'local' or 'windows'"; return 1; }
+  local email
+  if [[ -n "$GMAIL_ADDRESS" && ! "$GMAIL_ADDRESS" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+    CONFIG_ERROR="GMAIL_ADDRESS must be a valid email address"; return 1
+  fi
+  if [[ -n "$OPERATOR_EMAIL" && ! "$OPERATOR_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+    CONFIG_ERROR="OPERATOR_EMAIL must be a valid email address"; return 1
+  fi
+  if [[ -n "$NOTIFY_EMAILS" ]]; then
+    local -a recipients
+    IFS=',' read -r -a recipients <<<"$NOTIFY_EMAILS"
+    for email in "${recipients[@]}"; do
+      [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || {
+        CONFIG_ERROR="NOTIFY_EMAILS must be a comma-separated list of valid email addresses"; return 1;
+      }
+    done
+  fi
 
   if [[ "$COORDINATION" == git ]]; then LEDGER_DIR="$TW_ROOT/ledger"; else LEDGER_DIR="$TW_ROOT/local/ledger"; fi
   return 0
 }
 need_config()      { load_config || die 2 "$CONFIG_ERROR"; }
 require_operator() { [[ -n "$OPERATOR" ]] || die 2 "OPERATOR is not set in the config. Add your team username (self-declared) before using this command."; }
+
+notification_setup_status() {
+  NOTIFICATION_ERROR=""
+  if [[ "$EMAIL_NOTIFICATIONS" == off ]]; then
+    NOTIFICATION_ERROR="email notifications are disabled in config"
+    return 1
+  fi
+  if [[ -z "$GMAIL_ADDRESS" || -z "$NOTIFY_EMAILS" || -z "$OPERATOR_EMAIL" ]]; then
+    NOTIFICATION_ERROR="set GMAIL_ADDRESS, NOTIFY_EMAILS and OPERATOR_EMAIL in config/twinlab.env"
+    return 1
+  fi
+  if [[ ! -s "$GMAIL_PASSWORD_FILE" || ! -r "$GMAIL_PASSWORD_FILE" ]]; then
+    NOTIFICATION_ERROR="Gmail App Password file is missing or unreadable: $GMAIL_PASSWORD_FILE"
+    return 1
+  fi
+  local mode
+  mode="$(stat -c '%a' -- "$GMAIL_PASSWORD_FILE" 2>/dev/null)" || {
+    NOTIFICATION_ERROR="could not check permissions on the Gmail App Password file"
+    return 1
+  }
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] && (( (8#$mode & 077) == 0 )) || {
+    NOTIFICATION_ERROR="Gmail App Password file must be private (chmod 600)"
+    return 1
+  }
+  return 0
+}
 
 # ------------------------------------------------------------ allowlist -----
 # Fills ALLOW_TYPES and ALLOW_APPROVAL_REQUIRED from the configured type list.
