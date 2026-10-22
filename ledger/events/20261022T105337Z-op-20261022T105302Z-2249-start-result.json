@@ -1,0 +1,17 @@
+{
+  "action": "start",
+  "aws_caller_arn": "arn:aws:iam::091957637122:user/Maya_Akl",
+  "aws_launch_time": "2026-10-22T10:53:19+00:00",
+  "host": "DESKTOP-6P04V1L",
+  "instance_id": "i-0c074e3dbed7a45df",
+  "instance_type": "g4dn.xlarge",
+  "kind": "result",
+  "observed_state": "running",
+  "op_id": "op-20261022T105302Z-2249",
+  "operator_declared": "rana",
+  "operator_verified": false,
+  "outcome": "success",
+  "region": "us-west-2",
+  "schema": 1,
+  "ts_utc": "2026-10-22T10:53:37Z"
+}
