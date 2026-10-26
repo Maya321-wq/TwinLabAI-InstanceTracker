@@ -37,6 +37,61 @@ The AWS CLI asks for the key itself; it is never a command-line argument or writ
 profile stays as it was, so you can go back by emptying `AWS_PROFILE`. Whether the team should keep sharing one key is
 your supervisor's decision; this tool works either way. (Individual keys would make the records more trustworthy.)
 
+### Gmail notifications (optional, configured separately on each computer)
+After a verified, recorded start or stop, the command can email the configured team and supervisor with the operator,
+instance ID, region, instance type, state, public IP (when available), and operation ID. After a successful start, the
+starter's WSL computer can send that operator a reminder `REMINDER_MINUTES` (default `240`, i.e. 4 hours) after AWS
+launch time, but only if AWS still reports the same instance launch as running.
+
+Each teammate configures their own sender and recipient list in their ignored `config/twinlab.env`:
+
+```text
+GMAIL_ADDRESS=your-sending-account@gmail.com
+NOTIFY_EMAILS=member1@example.com,member2@example.com,supervisor@example.com
+OPERATOR_EMAIL=your-own-address@example.com
+REMINDER_MINUTES=240
+```
+
+`NOTIFY_EMAILS` should contain all teammates and the supervisor; give this list to each teammate separately because it
+is not committed to Git. Each operator's `OPERATOR_EMAIL` is their personal reminder destination. Set `REMINDER_BACKEND=windows` to use Windows Task Scheduler
+from WSL, or `local` to keep a WSL background timer. Set `REMINDER_MINUTES=5` temporarily for a quick running-time
+reminder test, or keep the default `240` for 4 hours. The Gmail sending
+account must have 2-Step Verification and a Google App Password. Store the App Password outside the repo in WSL:
+
+Set `EMAIL_NOTIFICATIONS=off` in the local config to disable start, stop, and reminder emails without changing the
+AWS start/stop workflow. Set it back to `on` to re-enable emails. The default is `on` for existing configs.
+
+```bash
+mkdir -p ~/.config/twinlab-ops
+chmod 700 ~/.config/twinlab-ops
+read -rsp "Gmail App Password: " TWINLAB_APP_PASSWORD; printf '\n'
+printf '%s' "$TWINLAB_APP_PASSWORD" > ~/.config/twinlab-ops/gmail-app-password
+unset TWINLAB_APP_PASSWORD
+chmod 600 ~/.config/twinlab-ops/gmail-app-password
+```
+
+Use a dedicated TwinLab sender account if possible; never commit or share an App Password in Git or chat. Then verify
+email delivery without touching AWS:
+
+```bash
+make validate                 # reports whether notification settings are ready
+make notify-test              # sends a test email to the configured team
+make reminder-test            # verifies Windows Task Scheduler can run WSL; no AWS/email
+```
+
+Email delivery is best effort: a mail failure is reported, but does not undo a successful AWS operation or ledger
+record. `make notify-test` can verify delivery; it does not resend a missed start/stop notice.
+
+`make reminder-test` registers a temporary task, runs a harmless WSL command through Windows Task Scheduler, and
+removes the task. It does not call AWS or send email, so it is safe to run while the EC2 instance is stopped.
+
+With `REMINDER_BACKEND=windows`, Windows Task Scheduler registers a one-time task at the AWS launch time plus the
+configured reminder interval. It requests wake-from-sleep, start-when-available, and retries failed runs, then
+launches WSL to check AWS and email the operator. If the PC is off, logged out, or offline at the scheduled time,
+delivery can still be late or unavailable; a local scheduler cannot guarantee delivery like a central service. The
+original `local` backend instead uses a WSL background process and can be missed if WSL exits. In either mode, the
+reminder rechecks AWS and discards the alert if the original instance launch is no longer running.
+
 ### Available instance types
 `config/instance-types.txt` lists the types available in `make set-type`: `t3.small`, `t3.medium`, `t3.large`,
 `t3.xlarge`, `g4dn.xlarge`, `g4dn.2xlarge`, and `g5.xlarge`. The `g5.xlarge` entry is marked
@@ -53,6 +108,7 @@ AWS offers it in the instance's Availability Zone.
 | `make history` | no | sessions + operations from your local copy of the records |
 | `make sync` | no | fast-forward to teammates' latest records |
 | `make recover` | no | explains any mismatch between AWS, records and Git, with exact next steps |
+| `make notify-test` | no | sends a test email to the configured notification list |
 | `make start` | **yes** | confirm, claim, start, verify it is `running`, record |
 | `make stop` | **yes** | warns, you type `STOP`, claim, stop, verify `stopped`, record |
 | `make set-type TYPE=t3.medium` | **yes** | only when **stopped**; confirm, claim, change, verify, record. Never stops or starts anything |
@@ -117,8 +173,9 @@ The tool cannot check that our machine image and GPU drivers work on a new type;
 Makefile                   thin front door (one script call per target)
 Makefile.v2.backup         the original, untouched
 config/                    twinlab.env.example, instance-types.txt (allowlist)
-scripts/                   one script per command; lib/common.sh (AWS + config) and lib/ledger.sh (claims + Git)
+scripts/                   command scripts; lib/common.sh (AWS + config), lib/ledger.sh (claims + Git), lib/notify.sh (Gmail)
 tools/ledger.py            standard-library Python: records, history, diagnosis
+tools/notify.py            standard-library Python: Gmail SMTP notifications
 ledger/                    shared records: claim.json (current operation) and events/*.json (one file per event)
 tests/                     fake aws/git, sandboxed harness, scenario tests (run with: make test)
 ```
@@ -126,5 +183,6 @@ Records are one small JSON file per event, so Git never produces merge conflicts
 from them and shows gaps instead of inventing times.
 
 ## 6. Not included yet (kept out on purpose)
-Cost estimates and reports, resource inventory (disks, Elastic IPs), CARLA and experiment tracking, idle alerts.
+Cost estimates and reports, resource inventory (disks, Elastic IPs), CARLA and experiment tracking, idle alerts beyond
+the configured running-time reminder.
 The `ledger/` events carry `instance_type` and timestamps, so a cost report can be added later without changing the records.

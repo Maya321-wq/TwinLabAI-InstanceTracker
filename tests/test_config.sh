@@ -39,6 +39,10 @@ bad_config "unknown setting"           'INSTANCE_ID=i-0123456789abcdef0\nREGION=
 bad_config "not KEY=VALUE"             'INSTANCE_ID=i-0123456789abcdef0\nREGION=us-west-2\nhello world\n' "expected KEY=VALUE"
 bad_config "bad coordination"          'INSTANCE_ID=i-0123456789abcdef0\nREGION=us-west-2\nCOORDINATION=maybe\n' "COORDINATION must be"
 bad_config "bad operator"              'INSTANCE_ID=i-0123456789abcdef0\nREGION=us-west-2\nOPERATOR=a b;c\n' "OPERATOR must be"
+bad_config "bad notification email"    'INSTANCE_ID=i-0123456789abcdef0\nREGION=us-west-2\nNOTIFY_EMAILS=valid@example.com,not-an-email\n' "NOTIFY_EMAILS must be"
+bad_config "invalid email notification toggle" 'INSTANCE_ID=i-0123456789abcdef0\nREGION=us-west-2\nEMAIL_NOTIFICATIONS=sometimes\n' "EMAIL_NOTIFICATIONS must be"
+bad_config "out-of-range reminder"     'INSTANCE_ID=i-0123456789abcdef0\nREGION=us-west-2\nREMINDER_MINUTES=4321\n' "REMINDER_MINUTES must be"
+bad_config "unsupported reminder backend" 'INSTANCE_ID=i-0123456789abcdef0\nREGION=us-west-2\nREMINDER_BACKEND=cloud\n' "REMINDER_BACKEND must be"
 
 new_sandbox; begin "missing config file"
 rm -f "$TW_CFG"; tw scripts/validate.sh; assert_rc 1; assert_text "Config file not found"
