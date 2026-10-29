@@ -1,0 +1,12 @@
+{
+  "action": "start",
+  "created_utc": "2026-10-29T12:26:06Z",
+  "expires_utc": "2026-10-29T13:26:06Z",
+  "host": "DESKTOP-9M20I3O",
+  "instance_id": "i-0c074e3dbed7a45df",
+  "op_id": "op-20261029T122551Z-12f9",
+  "operator_declared": "Maya",
+  "operator_verified": false,
+  "region": "us-west-2",
+  "schema": 1
+}
