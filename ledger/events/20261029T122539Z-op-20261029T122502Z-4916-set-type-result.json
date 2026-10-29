@@ -1,0 +1,17 @@
+{
+  "action": "set-type",
+  "aws_caller_arn": "arn:aws:iam::091957637122:user/Maya_Akl",
+  "host": "DESKTOP-9M20I3O",
+  "instance_id": "i-0c074e3dbed7a45df",
+  "instance_type": "t3.medium",
+  "kind": "result",
+  "observed_state": "stopped",
+  "op_id": "op-20261029T122502Z-4916",
+  "operator_declared": "Maya",
+  "operator_verified": false,
+  "outcome": "success",
+  "region": "us-west-2",
+  "requested_type": "t3.medium",
+  "schema": 1,
+  "ts_utc": "2026-10-29T12:25:39Z"
+}
