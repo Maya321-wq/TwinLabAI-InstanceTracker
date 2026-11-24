@@ -1,0 +1,14 @@
+{
+  "action": "clear-claim",
+  "host": "DESKTOP-9M20I3O",
+  "instance_id": "i-0c074e3dbed7a45df",
+  "kind": "claim_cleared",
+  "note": "cleared stale claim op-20261119T123243Z-5ff2 (stop by Maya)",
+  "op_id": "op-20261124T135102Z-2b01",
+  "operator_declared": "Maya",
+  "operator_verified": false,
+  "outcome": "cleared",
+  "region": "us-west-2",
+  "schema": 1,
+  "ts_utc": "2026-11-24T13:51:12Z"
+}
